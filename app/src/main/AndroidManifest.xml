@@ -34,7 +34,7 @@
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize"
             android:exported="true"
-            android:label="@string/app_name"
+            android:label="New Tech"
             android:theme="@style/Theme.WrapperWebview">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

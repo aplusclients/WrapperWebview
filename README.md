@@ -1,0 +1,1 @@
+Build a webview container for the primary django application, can be used for future web apps
