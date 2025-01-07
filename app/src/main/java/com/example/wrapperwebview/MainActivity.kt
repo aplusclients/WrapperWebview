@@ -427,7 +427,7 @@ fun WebViewScreen(url: String, downloadViewModel: DownloadViewModel) {
                                         <body>
                                         <h1>Page not available</h1>
                                         <p>Please check your internet connection.</p>
-                                        <button onclick="window.location.reload()">Retry</button>
+                                        <button onclick="window.location.href='${MainActivity.INITIAL_URL}'">Retry</button>
                                         </body></html>
                                     """.trimIndent(),
                                     "text/html",
