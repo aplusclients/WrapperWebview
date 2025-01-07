@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.MotionEvent
 import android.webkit.CookieManager
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -13,12 +14,16 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,10 +37,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wrapperwebview.ui.theme.WrapperWebviewTheme
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.io.FileOutputStream
+import java.net.HttpURLConnection
 import java.net.URL
+import androidx.compose.material3.ExperimentalMaterial3Api
 
 // fullscreen
 import android.webkit.WebChromeClient
@@ -45,11 +53,16 @@ import android.widget.FrameLayout
 import android.util.Log
 
 class MainActivity : ComponentActivity() {
+    var lastUrl = ""
     private val downloadViewModel by viewModels<DownloadViewModel>()
+
+    companion object {
+        const val INITIAL_URL = "https://seashell-app-gxd5i.ondigitalocean.app"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
+        lastUrl = INITIAL_URL
         setContent {
             WrapperWebviewTheme {
                 Surface(
@@ -57,8 +70,8 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     Box {
-                        WebViewScreen(url = "https://seashell-app-gxd5i.ondigitalocean.app")
-                        DownloadStatusOverlay()
+                        WebViewScreen(url = lastUrl, downloadViewModel = downloadViewModel)
+                        DownloadStatusOverlayScreen(downloadViewModel = downloadViewModel)
                     }
                 }
             }
@@ -67,12 +80,13 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun DownloadStatusOverlay(
-    viewModel: DownloadViewModel = viewModel()
+fun DownloadStatusOverlayScreen(
+    modifier: Modifier = Modifier,
+    downloadViewModel: DownloadViewModel = viewModel()
 ) {
-    val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
+    val downloadState = downloadViewModel.downloadState.collectAsStateWithLifecycle().value
     
-    if (downloadState != null) {
+    if (downloadState != DownloadState.Idle) {
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.BottomCenter
@@ -105,7 +119,7 @@ fun DownloadStatusOverlay(
                                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                             }
                             TextButton(
-                                onClick = { viewModel.hideDownload() }
+                                onClick = { downloadViewModel.hideDownload() }
                             ) {
                                 Text("Hide")
                             }
@@ -143,7 +157,7 @@ fun DownloadStatusOverlay(
                                 Button(
                                     onClick = {
                                         state.onInstall()
-                                        viewModel.hideDownload()
+                                        downloadViewModel.hideDownload()
                                     },
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = MaterialTheme.colorScheme.primary
@@ -152,7 +166,7 @@ fun DownloadStatusOverlay(
                                     Text("Install Now")
                                 }
                                 TextButton(
-                                    onClick = { viewModel.hideDownload() }
+                                    onClick = { downloadViewModel.hideDownload() }
                                 ) {
                                     Text("Dismiss")
                                 }
@@ -185,20 +199,21 @@ fun DownloadStatusOverlay(
                                 color = MaterialTheme.colorScheme.onErrorContainer
                             )
                             TextButton(
-                                onClick = { viewModel.hideDownload() }
+                                onClick = { downloadViewModel.hideDownload() }
                             ) {
                                 Text("Dismiss")
                             }
                         }
                     }
                 }
-                null -> { /* Nothing to show */ }
+                is DownloadState.Idle -> { /* Nothing to show */ }
             }
         }
     }
 }
 
 sealed class DownloadState {
+    object Idle : DownloadState()
     data class Downloading(
         val fileName: String,
         val progress: Int,
@@ -216,7 +231,7 @@ sealed class DownloadState {
 }
 
 class DownloadViewModel : ViewModel() {
-    private val _downloadState = MutableStateFlow<DownloadState?>(null)
+    private val _downloadState = MutableStateFlow<DownloadState>(DownloadState.Idle)
     val downloadState = _downloadState.asStateFlow()
     
     fun startDownload(fileName: String, contentLength: Long) {
@@ -224,9 +239,9 @@ class DownloadViewModel : ViewModel() {
     }
     
     fun updateProgress(progress: Int) {
-        val current = _downloadState.value
-        if (current is DownloadState.Downloading) {
-            _downloadState.value = current.copy(progress = progress)
+        val currentState = _downloadState.value
+        if (currentState is DownloadState.Downloading) {
+            _downloadState.value = currentState.copy(progress = progress)
         }
     }
     
@@ -239,12 +254,12 @@ class DownloadViewModel : ViewModel() {
     }
     
     fun hideDownload() {
-        _downloadState.value = null
+        _downloadState.value = DownloadState.Idle
     }
 }
 
 @Composable
-fun WebViewScreen(url: String) {
+fun WebViewScreen(url: String, downloadViewModel: DownloadViewModel) {
 
     val allowlist = listOf(
         "https://seashell-app-gxd5i.ondigitalocean.app",
@@ -254,225 +269,250 @@ fun WebViewScreen(url: String) {
     )
 
     val context = LocalContext.current
-    val viewModel: DownloadViewModel = viewModel()
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    val activity = context as? MainActivity
     
-    AndroidView(
-        factory = { context ->
-            WebView(context).apply {
-                // Configure WebView settings safely
-                val webSettings: WebSettings = settings
-                webSettings.javaScriptEnabled = true
-                webSettings.domStorageEnabled = true
-
-                // Enable caching
-                webSettings.cacheMode = WebSettings.LOAD_DEFAULT
-
-                webSettings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-
-                webSettings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-
-                // enable cookies
-                CookieManager.getInstance().setAcceptCookie(true)
-                CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-
-                // settings to allow the study music fullscreen to work NO EFFECT IT SEEMS
-                webSettings.mediaPlaybackRequiresUserGesture = false
-                webSettings.loadWithOverviewMode = true
-                webSettings.useWideViewPort = true
-
-
-                // Enable fullscreen video handling
-                webChromeClient = object : WebChromeClient() {
-                    private var customView: View? = null
-                    private var customViewCallback: CustomViewCallback? = null
-                    private var originalSystemUiVisibility: Int = 0
-
-                    override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
-                        if (customView != null) {
-                            onHideCustomView()
-                            return
-                        }
-
-                        // Save original UI visibility
-                        originalSystemUiVisibility = (context as ComponentActivity).window.decorView.systemUiVisibility
-                        customView = view
-                        customViewCallback = callback
-
-                        // Add the custom view to the activity's content view
-                        (context.window.decorView as FrameLayout).addView(
-                            customView,
-                            FrameLayout.LayoutParams(
-                                FrameLayout.LayoutParams.MATCH_PARENT,
-                                FrameLayout.LayoutParams.MATCH_PARENT
-                            )
-                        )
-
-                        // Hide system UI for fullscreen
-                        context.window.decorView.systemUiVisibility =
-                            View.SYSTEM_UI_FLAG_FULLSCREEN or
-                                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+    BackHandler {
+        if (webView?.canGoBack() == true) {
+            webView?.goBack()
+        } else {
+            (context as? Activity)?.finish()
+        }
+    }
+    
+    Box(modifier = Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { context ->
+                WebView(context).apply {
+                    webView = this
+                    // Configure WebView settings safely
+                    settings.apply {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        cacheMode = WebSettings.LOAD_DEFAULT
+                        databaseEnabled = true
+                        mediaPlaybackRequiresUserGesture = false
+                        userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
                     }
 
-                    override fun onHideCustomView() {
-                        // Remove custom view and restore original UI visibility
-                        (context as ComponentActivity).window.decorView.systemUiVisibility = originalSystemUiVisibility
-                        (context.window.decorView as FrameLayout).removeView(customView)
-                        customView = null
-                        customViewCallback?.onCustomViewHidden()
+                    // Enable cookies
+                    CookieManager.getInstance().also { cookieManager ->
+                        cookieManager.setAcceptCookie(true)
+                        cookieManager.setAcceptThirdPartyCookies(this, true)
                     }
-                }
-
-
-
-                // Configure WebViewClient to handle loading errors
-                webViewClient = object : WebViewClient() {
-
-                    override fun shouldOverrideUrlLoading(
-                        view: WebView?,
-                        request: WebResourceRequest?
-                    ): Boolean {
-                        val url = request?.url.toString()
-                        val isAllowed = allowlist.any { url.startsWith(it) }
-                        
-                        return if (url.endsWith("/downloads/")) {
-                            // open the android file list screen when the websites url ends with /downloads
-                            (view?.context as? ComponentActivity)?.setContent {
-                                DownloadedFilesScreen(view.context)
-                            }
-                            true
-                        } else if (isAllowed) {
-                            false // Allow allowed URLs
-                        } else {
-                            view?.loadData(
-                                """
-                                <html>
-                                    <body style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
-                                        <h1>Blocked</h1>
-                                        <p>This URL is not in the allowlist.</p>
-                                        <p>Allowed domains:</p>
-                                        <ul style="list-style-type: none; padding: 0;">
-                                            ${allowlist.joinToString("") { "<li>$it</li>" }}
-                                        </ul>
-                                    </body>
-                                </html>
-                                """.trimIndent(),
-                                "text/html",
-                                "UTF-8"
-                            )
-                            true // Block Webview from continuing to load this url
-                        } .also {
-                            if (!isAllowed && view != null) {
-                                super.shouldOverrideUrlLoading(view, request)
-                            }
-                        }
-                    }
-
-
-                    override fun onReceivedError(
-                        view: WebView?,
-                        request: WebResourceRequest?,
-                        error: WebResourceError?
-                    ) {
-                        // Only load error page for main frame
-                        if (request?.isForMainFrame == true) {
-
-                            Log.e("WEBVIEW_ERROR", "Error loading URL: ${request?.url}, Code: ${error?.errorCode}, Description: ${error?.description}")
-                            println("WebView Error: ${error?.description} - Code: ${error?.errorCode}")
-                            view?.loadData(
-                                """
-                                    <html>
-                                    <head>
-
-                                    </head>
-
-                                    <body>
-                                    <h1>Page not available</h1>
-                                    <p>Please check your internet connection.</p>
-                                    <button onclick="window.location.reload()">Retry</button>
-                                    <a href="https://seashell-app-gxd5i.ondigitalocean.app" class="button">Go to Example</a>
-                                    </body></html>
-                                """.trimIndent(),
-                                "text/html",
-                                "UTF-8"
-                            )
-                        }
-                    }
-
-                    override fun onPageFinished(view: WebView?, url: String?) {
-                        println("Page loaded: $url")
-                        
-                        // Check if page contains "404 Page Not Found"
-                        view?.evaluateJavascript(
-                            """
-                            (function() {
-                                return document.documentElement.innerText.includes('404 Page Not Found');
-                            })();
-                            """.trimIndent()
-                        ) { result ->
-                            if (result == "true") {
-                                viewModel.failDownload("App")
-                                // Go back to previous page instead of showing 404
-                                view?.post {
-                                    if (view.canGoBack()) {
-                                        view.goBack()
-                                    } else {
-                                        // If we can't go back, just load a blank page
-                                        view.loadUrl("about:blank")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Download Listener for APK files
-                setDownloadListener { downloadUrl, userAgent, contentDisposition, mimeType, contentLength ->
-                    val fileName = android.webkit.URLUtil.guessFileName(downloadUrl, contentDisposition, mimeType)
-                    val apkDir = File(context.filesDir, "apks")
-                    val apkFile = File(apkDir, fileName)
                     
-                    when {
-                        // If file exists, show install button
-                        apkFile.exists() -> {
-                            viewModel.completeDownload(fileName) {
-                                openApk(context, apkFile)
+                    // Enable swipe to go back
+                    setOnTouchListener { v, event ->
+                        when (event.action) {
+                            MotionEvent.ACTION_DOWN -> {
+                                v.parent.requestDisallowInterceptTouchEvent(true)
+                                false
                             }
-                        }
-                        // If download is in progress, show current progress
-                        viewModel.downloadState.value is DownloadState.Downloading -> {
-                            // Download already in progress, do nothing
-                        }
-                        // Start new download
-                        else -> {
-                            viewModel.startDownload(fileName, contentLength.toLong())
-                            downloadApk(
-                                context = context,
-                                url = downloadUrl,
-                                fileName = fileName,
-                                onProgress = { progress -> 
-                                    viewModel.updateProgress(progress)
-                                },
-                                onComplete = { success ->
-                                    if (success) {
-                                        viewModel.completeDownload(fileName) {
-                                            openApk(context, apkFile)
-                                        }
-                                    } else {
-                                        viewModel.failDownload(fileName)
-                                    }
+                            MotionEvent.ACTION_UP -> {
+                                v.parent.requestDisallowInterceptTouchEvent(false)
+                                false
+                            }
+                            MotionEvent.ACTION_MOVE -> {
+                                if (canGoBack() && event.getX() > v.width * 0.8f) {
+                                    goBack()
+                                    true
+                                } else {
+                                    false
                                 }
-                            )
+                            }
+                            else -> false
                         }
                     }
-                }
 
-                // Load the URL
-                loadUrl(url)
-            }
-        },
-        modifier = Modifier.fillMaxSize()
-    )
+                    // Enable fullscreen video handling
+                    webChromeClient = object : WebChromeClient() {
+                        private var customView: View? = null
+                        private var customViewCallback: CustomViewCallback? = null
+                        private var originalSystemUiVisibility: Int = 0
+
+                        override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                            if (customView != null) {
+                                onHideCustomView()
+                                return
+                            }
+
+                            // Save original UI visibility
+                            originalSystemUiVisibility = (context as ComponentActivity).window.decorView.systemUiVisibility
+                            customView = view
+                            customViewCallback = callback
+
+                            // Add the custom view to the activity's content view
+                            (context.window.decorView as FrameLayout).addView(
+                                customView,
+                                FrameLayout.LayoutParams(
+                                    FrameLayout.LayoutParams.MATCH_PARENT,
+                                    FrameLayout.LayoutParams.MATCH_PARENT
+                                )
+                            )
+
+                            // Hide system UI for fullscreen
+                            context.window.decorView.systemUiVisibility =
+                                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        }
+
+                        override fun onHideCustomView() {
+                            // Remove custom view and restore original UI visibility
+                            (context as ComponentActivity).window.decorView.systemUiVisibility = originalSystemUiVisibility
+                            (context.window.decorView as FrameLayout).removeView(customView)
+                            customView = null
+                            customViewCallback?.onCustomViewHidden()
+                        }
+                    }
+
+                    // Configure WebViewClient to handle loading errors
+                    webViewClient = object : WebViewClient() {
+
+                        override fun shouldOverrideUrlLoading(
+                            view: WebView?,
+                            request: WebResourceRequest?
+                        ): Boolean {
+                            val url = request?.url.toString()
+                            val isAllowed = allowlist.any { url.startsWith(it) }
+                            
+                            return if (url.endsWith("/downloads/")) {
+                                // open the android file list screen when the websites url ends with /downloads
+                                (view?.context as? ComponentActivity)?.setContent {
+                                    WrapperWebviewTheme {
+                                        DownloadedFilesScreen(context = view.context, downloadViewModel = downloadViewModel)
+                                    }
+                                }
+                                true
+                            } else if (!isAllowed) {
+                                view?.loadData(
+                                    """
+                                    <html>
+                                        <body style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
+                                            <h1>Blocked</h1>
+                                            <p>This URL is not in the allowlist.</p>
+                                            <p>Allowed domains:</p>
+                                            <ul style="list-style-type: none; padding: 0;">
+                                                ${allowlist.joinToString("") { "<li>$it</li>" }}
+                                            </ul>
+                                        </body>
+                                    </html>
+                                    """.trimIndent(),
+                                    "text/html",
+                                    "UTF-8"
+                                )
+                                true // Block Webview from continuing to load this url
+                            } else {
+                                false // Allow allowed URLs
+                            }
+                        }
+
+                        override fun onReceivedError(
+                            view: WebView?,
+                            request: WebResourceRequest?,
+                            error: WebResourceError?
+                        ) {
+                            // Only load error page for main frame
+                            if (request?.isForMainFrame == true) {
+
+                                Log.e("WEBVIEW_ERROR", "Error loading URL: ${request?.url}, Code: ${error?.errorCode}, Description: ${error?.description}")
+                                println("WebView Error: ${error?.description} - Code: ${error?.errorCode}")
+                                view?.loadData(
+                                    """
+                                        <html>
+                                        <head>
+
+                                        </head>
+
+                                        <body>
+                                        <h1>Page not available</h1>
+                                        <p>Please check your internet connection.</p>
+                                        <button onclick="window.location.reload()">Retry</button>
+                                        </body></html>
+                                    """.trimIndent(),
+                                    "text/html",
+                                    "UTF-8"
+                                )
+                            }
+                        }
+
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            url?.let { activity?.lastUrl = it }
+                            println("Page loaded: $url")
+                            
+                            // Check if page contains "404 Page Not Found"
+                            view?.evaluateJavascript(
+                                """
+                                (function() {
+                                    return document.documentElement.innerText.includes('404 Page Not Found');
+                                })();
+                                """.trimIndent()
+                            ) { result ->
+                                if (result == "true") {
+                                    downloadViewModel.failDownload("App")
+                                    // Go back to previous page instead of showing 404
+                                    view?.post {
+                                        if (view.canGoBack()) {
+                                            view.goBack()
+                                        } else {
+                                            // If we can't go back, just load a blank page
+                                            view.loadUrl("about:blank")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Download Listener for APK files
+                    setDownloadListener { downloadUrl, userAgent, contentDisposition, mimeType, contentLength ->
+                        val fileName = android.webkit.URLUtil.guessFileName(downloadUrl, contentDisposition, mimeType)
+                        val apkDir = File(context.filesDir, "apks")
+                        val apkFile = File(apkDir, fileName)
+                        
+                        when {
+                            // If file exists, show install button
+                            apkFile.exists() -> {
+                                downloadViewModel.completeDownload(fileName) {
+                                    openApk(context, apkFile)
+                                }
+                            }
+                            // If download is in progress, show current progress
+                            downloadViewModel.downloadState.value is DownloadState.Downloading -> {
+                                // Download already in progress, do nothing
+                            }
+                            // Start new download
+                            else -> {
+                                downloadViewModel.startDownload(fileName, contentLength.toLong())
+                                downloadApk(
+                                    context = context,
+                                    url = downloadUrl,
+                                    fileName = fileName,
+                                    onProgress = { progress -> 
+                                        downloadViewModel.updateProgress(progress)
+                                    },
+                                    onComplete = { success ->
+                                        if (success) {
+                                            downloadViewModel.completeDownload(fileName) {
+                                                openApk(context, apkFile)
+                                            }
+                                        } else {
+                                            downloadViewModel.failDownload(fileName)
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Load the URL
+                    loadUrl(url)
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+    }
 }
 
 fun downloadApk(context: Context, url: String, fileName: String, onProgress: (Int) -> Unit, onComplete: (Boolean) -> Unit) {
@@ -535,28 +575,66 @@ fun getDownloadedApks(context: Context): List<File> {
     return apkDir.listFiles()?.toList() ?: emptyList()
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DownloadedFilesScreen(context: Context) {
-    val downloadedFiles = remember { getDownloadedApks(context)}
+fun DownloadedFilesScreen(
+    context: Context,
+    downloadViewModel: DownloadViewModel = viewModel()
+) {
+    var downloadedFiles by remember { mutableStateOf(getDownloadedApks(context)) }
+    val activity = LocalContext.current as? MainActivity
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            text = "Downloaded Files",
-            modifier = Modifier.padding(16.dp),
-            style = MaterialTheme.typography.titleLarge
+        TopAppBar(
+            title = { Text("Downloaded Files") },
+            navigationIcon = {
+                IconButton(onClick = { 
+                    activity?.setContent {
+                        WrapperWebviewTheme {
+                            WebViewScreen(url = activity.lastUrl, downloadViewModel = downloadViewModel)
+                        }
+                    }
+                }) {
+                    Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                }
+            }
         )
 
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(downloadedFiles) { file ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            openApk(context, file)
-                        }
-                        .padding(16.dp)
-                ) {
-                    Text(text = file.name)
+        if (downloadedFiles.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("No downloaded files")
+            }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(downloadedFiles) { file ->
+                    ListItem(
+                        headlineContent = { Text(file.name) },
+                        supportingContent = { 
+                            Column {
+                                Text("Size: ${file.length() / 1024} KB")
+                                Text("Created: ${java.text.SimpleDateFormat("MMM dd, yyyy HH:mm").format(file.lastModified())}")
+                            }
+                        },
+                        trailingContent = {
+                            Row {
+                                IconButton(onClick = { 
+                                    file.delete()
+                                    downloadedFiles = getDownloadedApks(context)
+                                }) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Delete")
+                                }
+                                Button(onClick = { openApk(context, file) }) {
+                                    Text("Install")
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
                 }
             }
         }
