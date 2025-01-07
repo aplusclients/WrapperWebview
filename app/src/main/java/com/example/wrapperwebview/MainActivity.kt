@@ -334,6 +334,7 @@ fun WebViewScreen(url: String) {
                     ): Boolean {
                         val url = request?.url.toString()
                         val isAllowed = allowlist.any { url.startsWith(it) }
+                        
                         return if (url.endsWith("/downloads/")) {
                             // open the android file list screen when the websites url ends with /downloads
                             (view?.context as? ComponentActivity)?.setContent {
@@ -348,11 +349,11 @@ fun WebViewScreen(url: String) {
                                 <html>
                                     <body style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
                                         <h1>Blocked</h1>
-                                        <p>Navigation to this URL is not allowed.</p>
-                                        <p>$url</p>
-                                        <button onclick="history.back()" style="margin-top: 20px; padding: 10px 20px; font-size: 16px;">
-                                            Go Back
-                                        </button>
+                                        <p>This URL is not in the allowlist.</p>
+                                        <p>Allowed domains:</p>
+                                        <ul style="list-style-type: none; padding: 0;">
+                                            ${allowlist.joinToString("") { "<li>$it</li>" }}
+                                        </ul>
                                     </body>
                                 </html>
                                 """.trimIndent(),
@@ -360,7 +361,6 @@ fun WebViewScreen(url: String) {
                                 "UTF-8"
                             )
                             true // Block Webview from continuing to load this url
-
                         } .also {
                             if (!isAllowed && view != null) {
                                 super.shouldOverrideUrlLoading(view, request)
@@ -401,34 +401,70 @@ fun WebViewScreen(url: String) {
 
                     override fun onPageFinished(view: WebView?, url: String?) {
                         println("Page loaded: $url")
+                        
+                        // Check if page contains "404 Page Not Found"
+                        view?.evaluateJavascript(
+                            """
+                            (function() {
+                                return document.documentElement.innerText.includes('404 Page Not Found');
+                            })();
+                            """.trimIndent()
+                        ) { result ->
+                            if (result == "true") {
+                                viewModel.failDownload("App")
+                                // Go back to previous page instead of showing 404
+                                view?.post {
+                                    if (view.canGoBack()) {
+                                        view.goBack()
+                                    } else {
+                                        // If we can't go back, just load a blank page
+                                        view.loadUrl("about:blank")
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
                 // Download Listener for APK files
                 setDownloadListener { downloadUrl, userAgent, contentDisposition, mimeType, contentLength ->
                     val fileName = android.webkit.URLUtil.guessFileName(downloadUrl, contentDisposition, mimeType)
+                    val apkDir = File(context.filesDir, "apks")
+                    val apkFile = File(apkDir, fileName)
                     
-                    viewModel.startDownload(fileName, contentLength.toLong())
-                    
-                    downloadApk(
-                        context = context,
-                        url = downloadUrl,
-                        fileName = fileName,
-                        onProgress = { progress -> 
-                            viewModel.updateProgress(progress)
-                        },
-                        onComplete = { success ->
-                            if (success) {
-                                viewModel.completeDownload(fileName) {
-                                    val apkDir = File(context.filesDir, "apks")
-                                    val apkFile = File(apkDir, fileName)
-                                    openApk(context, apkFile)
-                                }
-                            } else {
-                                viewModel.failDownload(fileName)
+                    when {
+                        // If file exists, show install button
+                        apkFile.exists() -> {
+                            viewModel.completeDownload(fileName) {
+                                openApk(context, apkFile)
                             }
                         }
-                    )
+                        // If download is in progress, show current progress
+                        viewModel.downloadState.value is DownloadState.Downloading -> {
+                            // Download already in progress, do nothing
+                        }
+                        // Start new download
+                        else -> {
+                            viewModel.startDownload(fileName, contentLength.toLong())
+                            downloadApk(
+                                context = context,
+                                url = downloadUrl,
+                                fileName = fileName,
+                                onProgress = { progress -> 
+                                    viewModel.updateProgress(progress)
+                                },
+                                onComplete = { success ->
+                                    if (success) {
+                                        viewModel.completeDownload(fileName) {
+                                            openApk(context, apkFile)
+                                        }
+                                    } else {
+                                        viewModel.failDownload(fileName)
+                                    }
+                                }
+                            )
+                        }
+                    }
                 }
 
                 // Load the URL
