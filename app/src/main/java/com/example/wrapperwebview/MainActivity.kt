@@ -60,6 +60,16 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun WebViewScreen(url: String) {
+
+    val allowlist = listOf(
+        "https://seashell-app-gxd5i.ondigitalocean.app",
+        "https://f-droid.org",
+        "https://www.allowedsite.com",
+        "https://allowedsite.com"
+    )
+
+
+
     AndroidView(
         factory = { context ->
             WebView(context).apply {
@@ -129,9 +139,6 @@ fun WebViewScreen(url: String) {
 
 
 
-
-
-
                 // Configure WebViewClient to handle loading errors
                 webViewClient = object : WebViewClient() {
 
@@ -140,14 +147,38 @@ fun WebViewScreen(url: String) {
                         request: WebResourceRequest?
                     ): Boolean {
                         val url = request?.url.toString()
+                        val isAllowed = allowlist.any { url.startsWith(it) }
                         return if (url.endsWith("/downloads/")) {
                             // open the android file list screen when the websites url ends with /downloads
                             (view?.context as? ComponentActivity)?.setContent {
                                 DownloadedFilesScreen(view.context)
                             }
                             true
+                        } else if (isAllowed) {
+                            false // Allow allowed URLs
                         } else {
-                            super.shouldOverrideUrlLoading(view, request)
+                            view?.loadData(
+                                """
+                                <html>
+                                    <body style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
+                                        <h1>Blocked</h1>
+                                        <p>Navigation to this URL is not allowed.</p>
+                                        <p>$url</p>
+                                        <button onclick="history.back()" style="margin-top: 20px; padding: 10px 20px; font-size: 16px;">
+                                            Go Back
+                                        </button>
+                                    </body>
+                                </html>
+                                """.trimIndent(),
+                                "text/html",
+                                "UTF-8"
+                            )
+                            true // Block Webview from continuing to load this url
+
+                        } .also {
+                            if (!isAllowed && view != null) {
+                                super.shouldOverrideUrlLoading(view, request)
+                            }
                         }
                     }
 
@@ -174,7 +205,6 @@ fun WebViewScreen(url: String) {
                                     <p>Please check your internet connection.</p>
                                     <button onclick="window.location.reload()">Retry</button>
                                     <a href="https://seashell-app-gxd5i.ondigitalocean.app" class="button">Go to Example</a>
-                                    <a href="https://google.com" class="button">Go to Example</a>
                                     </body></html>
                                 """.trimIndent(),
                                 "text/html",
