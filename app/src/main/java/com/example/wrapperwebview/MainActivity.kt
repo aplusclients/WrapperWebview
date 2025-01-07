@@ -424,7 +424,9 @@ fun WebViewScreen(url: String, downloadViewModel: DownloadViewModel) {
                                         <body>
                                         <h1>Page not available</h1>
                                         <p>Please check your internet connection.</p>
-                                        <button onclick="window.location.href='${MainActivity.INITIAL_URL}'">Retry</button>
+                                        <button onclick="window.location.href='${request.url}'">Retry</button>
+                                        <br><br>
+                                        <button onclick="window.location.href='${MainActivity.INITIAL_URL}'">Go Home</button>
                                         </body></html>
                                     """.trimIndent(),
                                     "text/html",
