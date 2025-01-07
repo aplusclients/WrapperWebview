@@ -390,11 +390,8 @@ fun WebViewScreen(url: String, downloadViewModel: DownloadViewModel) {
                                     <html>
                                         <body style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
                                             <h1>Blocked</h1>
-                                            <p>This URL is not in the allowlist.</p>
-                                            <p>Allowed domains:</p>
-                                            <ul style="list-style-type: none; padding: 0;">
-                                                ${allowlist.joinToString("") { "<li>$it</li>" }}
-                                            </ul>
+                                            <p>This URL is not in the allowlist:</p>
+                                            <p>${url}</p>
                                         </body>
                                     </html>
                                     """.trimIndent(),
