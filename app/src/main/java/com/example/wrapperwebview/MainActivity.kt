@@ -1,5 +1,9 @@
 package com.example.wrapperwebview
 
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.webkit.CookieManager
 import android.webkit.WebResourceError
@@ -10,33 +14,28 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.activity.viewModels
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.FileProvider
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.wrapperwebview.ui.theme.WrapperWebviewTheme
-
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URL
-import android.net.Uri
-
-import android.content.Context
-import android.content.Intent
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.fillMaxWidth
-
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.layout.Row
-import androidx.compose.runtime.remember
-import androidx.compose.material3.MaterialTheme
-import androidx.core.content.FileProvider
 
 // fullscreen
 import android.webkit.WebChromeClient
@@ -45,16 +44,202 @@ import android.widget.FrameLayout
 
 import android.util.Log
 
-
 class MainActivity : ComponentActivity() {
+    private val downloadViewModel by viewModels<DownloadViewModel>()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContent {
             WrapperWebviewTheme {
-                WebViewScreen("https://seashell-app-gxd5i.ondigitalocean.app")
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    Box {
+                        WebViewScreen(url = "https://seashell-app-gxd5i.ondigitalocean.app")
+                        DownloadStatusOverlay()
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+fun DownloadStatusOverlay(
+    viewModel: DownloadViewModel = viewModel()
+) {
+    val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
+    
+    if (downloadState != null) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            when (val state = downloadState) {
+                is DownloadState.Downloading -> {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = MaterialTheme.shapes.medium,
+                        shadowElevation = 4.dp
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "Downloading ${state.fileName}...",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            if (state.contentLength > 0) {
+                                LinearProgressIndicator(
+                                    progress = state.progress / 100f,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            } else {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            }
+                            TextButton(
+                                onClick = { viewModel.hideDownload() }
+                            ) {
+                                Text("Hide")
+                            }
+                        }
+                    }
+                }
+                is DownloadState.Complete -> {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = MaterialTheme.shapes.medium,
+                        shadowElevation = 4.dp
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                "Download Complete",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                state.fileName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        state.onInstall()
+                                        viewModel.hideDownload()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary
+                                    )
+                                ) {
+                                    Text("Install Now")
+                                }
+                                TextButton(
+                                    onClick = { viewModel.hideDownload() }
+                                ) {
+                                    Text("Dismiss")
+                                }
+                            }
+                        }
+                    }
+                }
+                is DownloadState.Failed -> {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = MaterialTheme.shapes.medium,
+                        shadowElevation = 4.dp
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "Download Failed",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Text(
+                                state.fileName,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            TextButton(
+                                onClick = { viewModel.hideDownload() }
+                            ) {
+                                Text("Dismiss")
+                            }
+                        }
+                    }
+                }
+                null -> { /* Nothing to show */ }
+            }
+        }
+    }
+}
+
+sealed class DownloadState {
+    data class Downloading(
+        val fileName: String,
+        val progress: Int,
+        val contentLength: Long
+    ) : DownloadState()
+    
+    data class Complete(
+        val fileName: String,
+        val onInstall: () -> Unit
+    ) : DownloadState()
+    
+    data class Failed(
+        val fileName: String
+    ) : DownloadState()
+}
+
+class DownloadViewModel : ViewModel() {
+    private val _downloadState = MutableStateFlow<DownloadState?>(null)
+    val downloadState = _downloadState.asStateFlow()
+    
+    fun startDownload(fileName: String, contentLength: Long) {
+        _downloadState.value = DownloadState.Downloading(fileName, 0, contentLength)
+    }
+    
+    fun updateProgress(progress: Int) {
+        val current = _downloadState.value
+        if (current is DownloadState.Downloading) {
+            _downloadState.value = current.copy(progress = progress)
+        }
+    }
+    
+    fun completeDownload(fileName: String, onInstall: () -> Unit) {
+        _downloadState.value = DownloadState.Complete(fileName, onInstall)
+    }
+    
+    fun failDownload(fileName: String) {
+        _downloadState.value = DownloadState.Failed(fileName)
+    }
+    
+    fun hideDownload() {
+        _downloadState.value = null
     }
 }
 
@@ -68,8 +253,9 @@ fun WebViewScreen(url: String) {
         "https://allowedsite.com"
     )
 
-
-
+    val context = LocalContext.current
+    val viewModel: DownloadViewModel = viewModel()
+    
     AndroidView(
         factory = { context ->
             WebView(context).apply {
@@ -221,9 +407,28 @@ fun WebViewScreen(url: String) {
                 // Download Listener for APK files
                 setDownloadListener { downloadUrl, userAgent, contentDisposition, mimeType, contentLength ->
                     val fileName = android.webkit.URLUtil.guessFileName(downloadUrl, contentDisposition, mimeType)
-                    downloadApk(context, downloadUrl, fileName) {
-                        Toast.makeText(context, "APK downloaded: $fileName", Toast.LENGTH_SHORT).show()
-                    }
+                    
+                    viewModel.startDownload(fileName, contentLength.toLong())
+                    
+                    downloadApk(
+                        context = context,
+                        url = downloadUrl,
+                        fileName = fileName,
+                        onProgress = { progress -> 
+                            viewModel.updateProgress(progress)
+                        },
+                        onComplete = { success ->
+                            if (success) {
+                                viewModel.completeDownload(fileName) {
+                                    val apkDir = File(context.filesDir, "apks")
+                                    val apkFile = File(apkDir, fileName)
+                                    openApk(context, apkFile)
+                                }
+                            } else {
+                                viewModel.failDownload(fileName)
+                            }
+                        }
+                    )
                 }
 
                 // Load the URL
@@ -234,7 +439,7 @@ fun WebViewScreen(url: String) {
     )
 }
 
-fun downloadApk(context: Context, url: String, fileName: String, onComplete: () -> Unit) {
+fun downloadApk(context: Context, url: String, fileName: String, onProgress: (Int) -> Unit, onComplete: (Boolean) -> Unit) {
     // Create the "apks" directory in private storage
     val apkDir = File(context.filesDir, "apks")
     if (!apkDir.exists()) apkDir.mkdir()
@@ -248,15 +453,27 @@ fun downloadApk(context: Context, url: String, fileName: String, onComplete: () 
             val urlConnection = URL(url).openConnection()
             urlConnection.connect()
 
+            val contentLength = urlConnection.contentLength.toLong()
+            var downloadedLength = 0L
+
             val inputStream = urlConnection.getInputStream()
             val outputStream = FileOutputStream(apkFile.absolutePath)
 
-            val buffer = ByteArray(1024)
-            var bytesRead: Int // Declare the variable without initialization
+            val buffer = ByteArray(8192) // Increased buffer size for better performance
+            var bytesRead: Int
 
             // Read data in chunks and write to the file
             while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                 outputStream.write(buffer, 0, bytesRead)
+                downloadedLength += bytesRead
+                
+                // Update progress on UI thread
+                if (contentLength > 0) {
+                    val progress = ((downloadedLength * 100) / contentLength).toInt()
+                    (context as ComponentActivity).runOnUiThread { 
+                        onProgress(progress)
+                    }
+                }
             }
 
             // Close streams after completion
@@ -264,11 +481,17 @@ fun downloadApk(context: Context, url: String, fileName: String, onComplete: () 
             inputStream.close()
 
             // Notify completion on the UI thread
-            (context as ComponentActivity).runOnUiThread { onComplete() }
+            (context as ComponentActivity).runOnUiThread { onComplete(true) }
         } catch (e: Exception) {
             e.printStackTrace()
+            // Notify failure on the UI thread
+            (context as ComponentActivity).runOnUiThread { onComplete(false) }
+            // Delete partial file if download failed
+            if (apkFile.exists()) {
+                apkFile.delete()
+            }
         }
-    }.start() // Start the thread
+    }.start()
 }
 
 fun getDownloadedApks(context: Context): List<File> {
