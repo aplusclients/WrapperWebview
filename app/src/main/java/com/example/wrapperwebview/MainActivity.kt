@@ -4,14 +4,20 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.MotionEvent
+import android.view.View
+import android.view.Window
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.webkit.CookieManager
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -47,8 +53,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 
 // fullscreen
 import android.webkit.WebChromeClient
-import android.view.View
-import android.widget.FrameLayout
 
 import android.util.Log
 
@@ -57,7 +61,7 @@ class MainActivity : ComponentActivity() {
     private val downloadViewModel by viewModels<DownloadViewModel>()
 
     companion object {
-        const val INITIAL_URL = "https://seashell-app-gxd5i.ondigitalocean.app"
+        const val INITIAL_URL = "https://seashell-app-gxd5i.ondigitalocean.app/keepintouch"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -112,8 +116,8 @@ fun DownloadStatusOverlayScreen(
                             )
                             if (state.contentLength > 0) {
                                 LinearProgressIndicator(
-                                    progress = state.progress / 100f,
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier.fillMaxWidth(),
+                                    progress = { state.progress / 100f }
                                 )
                             } else {
                                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -340,6 +344,7 @@ fun WebViewScreen(url: String, downloadViewModel: DownloadViewModel) {
                     webChromeClient = object : WebChromeClient() {
                         private var customView: View? = null
                         private var customViewCallback: CustomViewCallback? = null
+                        private var wasSystemBarsHidden = false
                         private var originalSystemUiVisibility: Int = 0
 
                         override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
@@ -348,33 +353,66 @@ fun WebViewScreen(url: String, downloadViewModel: DownloadViewModel) {
                                 return
                             }
 
-                            // Save original UI visibility
-                            originalSystemUiVisibility = (context as ComponentActivity).window.decorView.systemUiVisibility
                             customView = view
                             customViewCallback = callback
+                            val activity = context as? Activity
 
-                            // Add the custom view to the activity's content view
-                            (context.window.decorView as FrameLayout).addView(
-                                customView,
-                                FrameLayout.LayoutParams(
-                                    FrameLayout.LayoutParams.MATCH_PARENT,
-                                    FrameLayout.LayoutParams.MATCH_PARENT
+                            if (activity != null) {
+                                // Add the custom view to the activity's content view
+                                (activity.window.decorView as FrameLayout).addView(
+                                    customView,
+                                    FrameLayout.LayoutParams(
+                                        FrameLayout.LayoutParams.MATCH_PARENT,
+                                        FrameLayout.LayoutParams.MATCH_PARENT
+                                    )
                                 )
-                            )
 
-                            // Hide system UI for fullscreen
-                            context.window.decorView.systemUiVisibility =
-                                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                                // Hide system UI for fullscreen using modern API
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                    activity.window.setDecorFitsSystemWindows(false)
+                                    activity.window.insetsController?.let { controller ->
+                                        controller.hide(WindowInsets.Type.systemBars())
+                                        controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                                    }
+                                    wasSystemBarsHidden = true
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    originalSystemUiVisibility = activity.window.decorView.systemUiVisibility
+                                    @Suppress("DEPRECATION")
+                                    activity.window.decorView.systemUiVisibility = (
+                                        View.SYSTEM_UI_FLAG_FULLSCREEN or
                                         View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
                                         View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                                    )
+                                }
+                            }
                         }
 
                         override fun onHideCustomView() {
-                            // Remove custom view and restore original UI visibility
-                            (context as ComponentActivity).window.decorView.systemUiVisibility = originalSystemUiVisibility
-                            (context.window.decorView as FrameLayout).removeView(customView)
+                            val activity = context as? Activity
+                            
+                            if (activity != null) {
+                                // Restore system UI visibility using modern API
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                    if (wasSystemBarsHidden) {
+                                        activity.window.setDecorFitsSystemWindows(true)
+                                        activity.window.insetsController?.show(WindowInsets.Type.systemBars())
+                                        wasSystemBarsHidden = false
+                                    }
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    activity.window.decorView.systemUiVisibility = originalSystemUiVisibility
+                                }
+
+                                // Remove custom view
+                                customView?.let { view ->
+                                    (activity.window.decorView as FrameLayout).removeView(view)
+                                }
+                            }
+                            
                             customView = null
                             customViewCallback?.onCustomViewHidden()
+                            customViewCallback = null
                         }
                     }
 
