@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
     private val downloadViewModel by viewModels<DownloadViewModel>()
 
     companion object {
-        const val INITIAL_URL = "https://seashell-app-gxd5i.ondigitalocean.app/keepintouch"
+        const val INITIAL_URL = "https://seashell-app-gxd5i.ondigitalocean.app/moreapps"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
