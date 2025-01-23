@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -301,10 +301,15 @@ fun WebViewScreen(url: String, downloadViewModel: DownloadViewModel) {
                         cookieManager.setAcceptThirdPartyCookies(this, true)
                     }
                     
-                    // Enable swipe to go back
+                    // Enable swipe to go back only from left edge with rightward motion
+                    var startX = 0f
+                    var startY = 0f
+                    
                     setOnTouchListener { v, event ->
                         when (event.action) {
                             MotionEvent.ACTION_DOWN -> {
+                                startX = event.x
+                                startY = event.y
                                 v.parent.requestDisallowInterceptTouchEvent(true)
                                 false
                             }
@@ -313,7 +318,14 @@ fun WebViewScreen(url: String, downloadViewModel: DownloadViewModel) {
                                 false
                             }
                             MotionEvent.ACTION_MOVE -> {
-                                if (canGoBack() && event.getX() > v.width * 0.8f) {
+                                val deltaX = event.x - startX
+                                val deltaY = event.y - startY
+                                // Check if touch started from left edge (20% of width)
+                                // and movement is primarily horizontal to the right
+                                if (canGoBack() && 
+                                    startX < v.width * 0.2f && 
+                                    deltaX > 100 && // Minimum swipe distance
+                                    Math.abs(deltaX) > Math.abs(deltaY) * 2) { // Ensure horizontal movement
                                     goBack()
                                     true
                                 } else {
@@ -594,7 +606,7 @@ fun DownloadedFilesScreen(
                         }
                     }
                 }) {
-                    Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
             }
         )
