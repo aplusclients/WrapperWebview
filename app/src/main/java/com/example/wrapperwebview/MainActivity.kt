@@ -267,10 +267,16 @@ fun WebViewScreen(url: String, downloadViewModel: DownloadViewModel) {
 
     val allowlist = listOf(
         "https://seashell-app-gxd5i.ondigitalocean.app",
+        "https://pauseos.com",
+        "https://notasmartphone.com",
+        "https://apt.izzysoft.de",
+        "https://dl.duosecurity.com",
         "https://f-droid.org",
         "https://scontent.whatsapp.net",
         "https://signal.org",
-        "https://dl.duosecurity.com",
+        "https://telegram.org",
+        "https://www.webex.com",
+        "https://webex.com",
         "https://zoom.us",
         "https://cdn.zoom.us",
     )
