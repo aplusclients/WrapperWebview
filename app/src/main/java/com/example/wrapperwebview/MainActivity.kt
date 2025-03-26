@@ -277,6 +277,9 @@ fun WebViewScreen(url: String, downloadViewModel: DownloadViewModel) {
         "https://telegram.org",
         "https://www.webex.com",
         "https://webex.com",
+        "https://www.whatsapp.com",
+        "https://whatsapp.com",
+        "https://content.whatsapp.net",
         "https://zoom.us",
         "https://cdn.zoom.us",
     )
