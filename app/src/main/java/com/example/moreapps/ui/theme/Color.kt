@@ -1,4 +1,4 @@
-package com.example.wrapperwebview.ui.theme
+package com.example.moreapps.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

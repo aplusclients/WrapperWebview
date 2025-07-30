@@ -1,4 +1,4 @@
-package com.example.wrapperwebview
+package com.example.moreapps
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4

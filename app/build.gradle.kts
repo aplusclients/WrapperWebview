@@ -5,15 +5,15 @@ plugins {
 }
 
 android {
-    namespace = "com.example.wrapperwebview"
+    namespace = "com.example.moreapps"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.wrapperwebview"
+        applicationId = "com.example.moreapps"
         minSdk = 31
         targetSdk = 34
         versionCode = 1
-        versionName = "1.7.1"
+        versionName = "1.7.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

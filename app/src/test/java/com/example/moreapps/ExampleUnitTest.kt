@@ -1,4 +1,4 @@
-package com.example.wrapperwebview
+package com.example.moreapps
 
 import org.junit.Test
 

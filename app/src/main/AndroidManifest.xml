@@ -22,7 +22,7 @@
         <!-- FileProvider Configuration -->
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="com.example.wrapperwebview.provider"
+            android:authorities="com.example.moreapps.provider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

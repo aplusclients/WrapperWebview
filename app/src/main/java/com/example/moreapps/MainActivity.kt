@@ -1,4 +1,4 @@
-package com.example.wrapperwebview
+package com.example.moreapps
 
 import android.app.Activity
 import android.content.Context
@@ -8,7 +8,6 @@ import android.os.Build
 import android.os.Bundle
 import android.view.MotionEvent
 import android.view.View
-import android.view.Window
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.webkit.CookieManager
@@ -23,7 +22,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -41,13 +39,11 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.wrapperwebview.ui.theme.WrapperWebviewTheme
+import com.example.moreapps.ui.theme.WrapperWebviewTheme
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
 import java.net.URL
 import androidx.compose.material3.ExperimentalMaterial3Api
 
@@ -282,6 +278,10 @@ fun WebViewScreen(url: String, downloadViewModel: DownloadViewModel) {
         "https://content.whatsapp.net",
         "https://zoom.us",
         "https://cdn.zoom.us",
+        "https://voiceinput.futo.org",
+        "https://dl.voiceinput.futo.org",
+        "https://keyboard.futo.org",
+        "https://dl.keyboard.futo.org",
     )
 
     val context = LocalContext.current
@@ -316,6 +316,9 @@ fun WebViewScreen(url: String, downloadViewModel: DownloadViewModel) {
                         cookieManager.setAcceptCookie(true)
                         cookieManager.setAcceptThirdPartyCookies(this, true)
                     }
+                    
+                    clearCache(true)  // Clear cache before loading
+                    loadUrl(url)
                     
                     // Enable swipe to go back only from left edge with rightward motion
                     var startX = 0f
@@ -567,8 +570,6 @@ fun WebViewScreen(url: String, downloadViewModel: DownloadViewModel) {
                         }
                     }
 
-                    // Load the URL
-                    loadUrl(url)
                 }
             },
             modifier = Modifier.fillMaxSize()
